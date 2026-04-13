@@ -74,7 +74,7 @@ export default function SignInPage() {
         <div className="relative z-10 flex flex-col items-center text-center max-w-sm">
           <Image
             src="/svg.svg"
-            alt="BridgeLeads"
+            alt="BRIDGE Vault"
             width={96}
             height={96}
             className="h-22 w-22 mb-8"
@@ -130,7 +130,7 @@ export default function SignInPage() {
             <Link href="/" className="lg:hidden inline-flex items-center justify-center mb-6">
               <Image
                 src="/svg.svg"
-                alt="BridgeLeads"
+                alt="BRIDGE Vault"
                 width={64}
                 height={64}
                 className="h-14 w-14"

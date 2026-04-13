@@ -3,7 +3,7 @@ import { Providers } from "@/providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BridgeLeads \u2014 Capture & Manage Business Card Leads",
+  title: "BRIDGE Vault \u2014 Capture & Manage Business Card Leads",
   description:
     "Scan business cards, extract contact info with OCR, and manage your leads in one place.",
   manifest: "/manifest.json",

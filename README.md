@@ -36,7 +36,7 @@ Scan business cards, extract contact info with OCR, and manage your leads. Mobil
 
 ```bash
 git clone <repo-url>
-cd bridgeleads
+cd bridge-vault
 npm install
 ```
 

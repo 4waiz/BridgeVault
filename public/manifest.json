@@ -1,6 +1,6 @@
 {
-  "name": "BridgeLeads",
-  "short_name": "BridgeLeads",
+  "name": "BRIDGE Vault",
+  "short_name": "BRIDGE Vault",
   "description": "Capture & manage business card leads",
   "start_url": "/dashboard",
   "display": "standalone",

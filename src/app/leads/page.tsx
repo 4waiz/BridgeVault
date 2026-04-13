@@ -236,7 +236,7 @@ export default function LeadsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `bridgeleads-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download = `bridge-vault-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
       toast("Export downloaded!", "success");

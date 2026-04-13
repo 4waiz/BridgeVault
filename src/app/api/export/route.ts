@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="bridgeleads-export-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      "Content-Disposition": `attachment; filename="bridge-vault-export-${new Date().toISOString().slice(0, 10)}.xlsx"`,
     },
   });
 }

@@ -33,7 +33,7 @@ export function Header() {
           <Link href="/dashboard" className="flex items-center">
             <Image
               src="/svg.svg"
-              alt="BridgeLeads"
+              alt="BRIDGE Vault"
               width={160}
               height={52}
               className="h-10 sm:h-11 w-auto"
