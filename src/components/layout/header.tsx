@@ -36,7 +36,7 @@ export function Header() {
               alt="BRIDGE Vault"
               width={160}
               height={52}
-              className="h-10 sm:h-11 w-auto"
+              className="h-14 sm:h-16 w-auto"
               unoptimized
             />
           </Link>

@@ -31,7 +31,7 @@ export default async function LandingPage() {
               alt="BRIDGE Vault"
               width={950}
               height={261}
-              className="h-11 sm:h-12 w-auto"
+              className="h-16 sm:h-20 w-auto"
               unoptimized
             />
           </Link>
@@ -242,7 +242,7 @@ export default async function LandingPage() {
       {/* â”€â”€ Footer â”€â”€ */}
       <footer className="py-8 text-center border-t border-white/[0.04]">
         <div className="flex flex-col items-center gap-3 px-5">
-          <Image src="/svg.svg" alt="BRIDGE Vault" width={950} height={261} className="h-8 w-auto opacity-40" unoptimized />
+          <Image src="/svg.svg" alt="BRIDGE Vault" width={950} height={261} className="h-12 sm:h-14 w-auto opacity-40" unoptimized />
           <p className="text-xs text-text-muted/40">
             &copy; {new Date().getFullYear()} BRIDGE Vault. All rights reserved.
           </p>

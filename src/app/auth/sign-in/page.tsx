@@ -77,7 +77,7 @@ export default function SignInPage() {
             alt="BRIDGE Vault"
             width={96}
             height={96}
-            className="h-22 w-22 mb-8"
+            className="h-32 w-32 mb-8"
             unoptimized
           />
           <h2 className="text-3xl font-extrabold tracking-tight mb-4">
@@ -133,7 +133,7 @@ export default function SignInPage() {
                 alt="BRIDGE Vault"
                 width={64}
                 height={64}
-                className="h-14 w-14"
+                className="h-20 w-20"
                 unoptimized
               />
             </Link>
