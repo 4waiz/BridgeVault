@@ -36,6 +36,7 @@ const statusVariantMap: Record<LeadStatus, BadgeProps["variant"]> = {
   contacted: "warning",
   qualified: "success",
   archived: "muted",
+  draft: "muted",
 };
 
 export function StatusBadge({ status }: { status: LeadStatus }) {

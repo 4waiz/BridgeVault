@@ -1,10 +1,10 @@
 "use client";
 
-import { forwardRef, type InputHTMLAttributes } from "react";
+import { forwardRef, type InputHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
-  label?: string;
+  label?: ReactNode;
   error?: string;
   confidence?: number;
 }
@@ -17,7 +17,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           <div className="flex items-center justify-between">
             <label
               htmlFor={id}
-              className="text-sm font-medium text-text-muted"
+              className="text-sm font-medium text-text-muted flex items-center"
             >
               {label}
             </label>

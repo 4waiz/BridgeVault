@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AppShell } from "@/components/layout/app-shell";
-import { CheckCircle, XCircle, Sun, Moon } from "lucide-react";
-import { useTheme } from "next-themes";
+import { CheckCircle, XCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface StatusItem {
@@ -13,8 +12,6 @@ interface StatusItem {
 }
 
 export default function SettingsPage() {
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const [statuses, setStatuses] = useState<StatusItem[]>([
     { label: "Supabase", status: "unknown" },
     { label: "OCR Provider", status: "unknown" },
@@ -69,10 +66,6 @@ export default function SettingsPage() {
     checkStatus();
   }, []);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   return (
     <AppShell>
       <div className="p-4 md:p-6 lg:p-8 max-w-3xl mx-auto space-y-8">
@@ -81,37 +74,6 @@ export default function SettingsPage() {
           <p className="text-text-muted mt-1">
             System status and configuration
           </p>
-        </div>
-
-        {/* Appearance */}
-        <div className="rounded-2xl border border-border bg-panel p-5 space-y-4">
-          <h2 className="font-semibold text-lg">Appearance</h2>
-          {mounted && (
-            <div className="flex gap-3">
-              <button
-                onClick={() => setTheme("light")}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
-                  theme === "light"
-                    ? "border-brand bg-brand-soft text-brand"
-                    : "border-border bg-panel-2 text-text-muted hover:text-text"
-                }`}
-              >
-                <Sun className="h-4 w-4" />
-                Light
-              </button>
-              <button
-                onClick={() => setTheme("dark")}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
-                  theme === "dark"
-                    ? "border-brand bg-brand-soft text-brand"
-                    : "border-border bg-panel-2 text-text-muted hover:text-text"
-                }`}
-              >
-                <Moon className="h-4 w-4" />
-                Dark
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Connectivity */}

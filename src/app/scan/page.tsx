@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Upload, X, Loader2, AlertTriangle, Check } from "lucide-react";
+import { Camera, Upload, X, Loader2, AlertTriangle, Check, QrCode } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -144,6 +144,8 @@ export default function ScanPage() {
       ocr_raw_text: parsed?.raw_text,
       ocr_json: parsed as unknown as Record<string, unknown>,
       enrichment_json: enrichmentData as unknown as Record<string, unknown>,
+      qr_raw: parsed?.qr_raw,
+      qr_json: parsed?.qr_source as Record<string, unknown> | undefined,
       image_path: imagePath,
       image_name: imageFile?.name,
       image_mime: imageFile?.type,
@@ -174,10 +176,21 @@ export default function ScanPage() {
     setFields((prev) => ({ ...prev, [key]: value }));
   }
 
+  /** Badge showing if a field came from QR */
+  function qrBadge(fieldKey: string) {
+    if (!parsed?.qr_source?.[fieldKey as keyof typeof parsed.qr_source]) return null;
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-brand/10 text-brand ml-1">
+        <QrCode className="h-3 w-3" />
+        QR
+      </span>
+    );
+  }
+
   return (
     <AppShell>
-      <div className="p-4 md:p-6 lg:p-8 max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-6">Scan Business Card</h1>
+      <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto">
+        <h1 className="text-2xl font-bold mb-4">Scan Business Card</h1>
 
         {/* Step: Capture */}
         {step === "capture" && (
@@ -278,133 +291,154 @@ export default function ScanPage() {
             <Loader2 className="h-10 w-10 text-brand animate-spin" />
             <p className="text-text-muted">Extracting card information...</p>
             <p className="text-xs text-text-muted/60">
-              This may take a few seconds
+              Running OCR + QR detection
             </p>
           </div>
         )}
 
-        {/* Step: Review */}
+        {/* Step: Review — single-page compact layout */}
         {step === "review" && parsed && (
-          <div className="space-y-6">
-            {/* Duplicate warning */}
-            {checkingDuplicates && (
-              <div className="p-3 rounded-2xl border border-border bg-panel">
-                <div className="flex items-center gap-2 text-sm text-text-muted">
+          <div className="space-y-4">
+            {/* Alerts row: duplicates + QR detection notice */}
+            <div className="space-y-2">
+              {checkingDuplicates && (
+                <div className="p-2.5 rounded-xl border border-border bg-panel flex items-center gap-2 text-sm text-text-muted">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Checking for duplicates...
                 </div>
-              </div>
-            )}
-            {duplicates.length > 0 && (
-              <div className="p-4 rounded-2xl border border-warning/30 bg-warning/5">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-medium text-warning">
-                      Possible duplicate{duplicates.length > 1 ? "s" : ""} found
-                    </p>
+              )}
+              {duplicates.length > 0 && (
+                <div className="p-3 rounded-xl border border-warning/30 bg-warning/5 flex items-start gap-2.5">
+                  <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <span className="font-medium text-warning">
+                      Possible duplicate{duplicates.length > 1 ? "s" : ""}
+                    </span>
                     {duplicates.map((d) => (
-                      <p key={d.lead_id} className="text-sm text-text-muted mt-1">
-                        {d.similarity_reason} &mdash; {d.full_name || "Unknown"}{" "}
+                      <p key={d.lead_id} className="text-text-muted mt-0.5">
+                        {d.similarity_reason} — {d.full_name || "Unknown"}{" "}
                         {d.company ? `at ${d.company}` : ""}
                       </p>
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+              {parsed.qr_raw && (
+                <div className="p-2.5 rounded-xl border border-brand/20 bg-brand/5 flex items-center gap-2 text-sm">
+                  <QrCode className="h-4 w-4 text-brand shrink-0" />
+                  <span className="text-brand">QR code detected and merged with OCR data</span>
+                </div>
+              )}
+            </div>
 
-            <div className="grid lg:grid-cols-2 gap-6">
-              {/* Image preview */}
+            {/* Main content: image + fields in a tight grid */}
+            <div className="grid lg:grid-cols-[280px_1fr] xl:grid-cols-[320px_1fr] gap-4">
+              {/* Left column: Card preview + enrichment */}
               <div className="space-y-3">
                 {imagePreview && (
-                  <div className="rounded-2xl overflow-hidden border border-border bg-panel">
+                  <div className="rounded-xl overflow-hidden border border-border bg-panel">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={imagePreview}
                       alt="Business card"
-                      className="w-full max-h-72 object-contain"
+                      className="w-full max-h-48 lg:max-h-56 object-contain"
                     />
                   </div>
                 )}
                 {enrichmentData?.summary && (
-                  <div className="p-3 rounded-xl bg-brand-soft border border-brand/10">
-                    <p className="text-sm text-brand">
+                  <div className="p-2.5 rounded-lg bg-brand-soft border border-brand/10">
+                    <p className="text-xs text-brand leading-relaxed">
                       {enrichmentData.summary}
                     </p>
                   </div>
                 )}
               </div>
 
-              {/* Fields form */}
-              <div className="space-y-3">
-                <Input
-                  label="Full Name"
-                  id="full_name"
-                  value={fields.full_name}
-                  onChange={(e) => updateField("full_name", e.target.value)}
-                  confidence={parsed.full_name.confidence}
-                />
-                <div className="grid grid-cols-2 gap-3">
+              {/* Right column: Compact form fields */}
+              <div className="space-y-2.5">
+                {/* Row 1: Full name */}
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Input
+                      label={<>Full Name{qrBadge("full_name")}</>}
+                      id="full_name"
+                      value={fields.full_name}
+                      onChange={(e) => updateField("full_name", e.target.value)}
+                      confidence={parsed.full_name.confidence}
+                    />
+                  </div>
+                </div>
+                {/* Row 2: First + Last name */}
+                <div className="grid grid-cols-2 gap-2">
                   <Input
-                    label="First Name"
+                    label={<>First Name{qrBadge("first_name")}</>}
                     id="first_name"
                     value={fields.first_name}
                     onChange={(e) => updateField("first_name", e.target.value)}
                     confidence={parsed.first_name.confidence}
                   />
                   <Input
-                    label="Last Name"
+                    label={<>Last Name{qrBadge("last_name")}</>}
                     id="last_name"
                     value={fields.last_name}
                     onChange={(e) => updateField("last_name", e.target.value)}
                     confidence={parsed.last_name.confidence}
                   />
                 </div>
-                <Input
-                  label="Job Title"
-                  id="job_title"
-                  value={fields.job_title}
-                  onChange={(e) => updateField("job_title", e.target.value)}
-                  confidence={parsed.job_title.confidence}
-                />
-                <Input
-                  label="Company"
-                  id="company"
-                  value={fields.company}
-                  onChange={(e) => updateField("company", e.target.value)}
-                  confidence={parsed.company.confidence}
-                />
-                <Input
-                  label="Email"
-                  id="email"
-                  type="email"
-                  value={fields.email}
-                  onChange={(e) => updateField("email", e.target.value)}
-                  confidence={parsed.email.confidence}
-                />
-                <Input
-                  label="Phone"
-                  id="phone"
-                  type="tel"
-                  value={fields.phone}
-                  onChange={(e) => updateField("phone", e.target.value)}
-                  confidence={parsed.phone.confidence}
-                />
-                <Input
-                  label="Website"
-                  id="website"
-                  value={fields.website}
-                  onChange={(e) => updateField("website", e.target.value)}
-                  confidence={parsed.website.confidence}
-                />
-                <Input
-                  label="Address"
-                  id="address"
-                  value={fields.address}
-                  onChange={(e) => updateField("address", e.target.value)}
-                />
-                <div className="grid grid-cols-2 gap-3">
+                {/* Row 3: Title + Company */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    label={<>Job Title{qrBadge("job_title")}</>}
+                    id="job_title"
+                    value={fields.job_title}
+                    onChange={(e) => updateField("job_title", e.target.value)}
+                    confidence={parsed.job_title.confidence}
+                  />
+                  <Input
+                    label={<>Company{qrBadge("company")}</>}
+                    id="company"
+                    value={fields.company}
+                    onChange={(e) => updateField("company", e.target.value)}
+                    confidence={parsed.company.confidence}
+                  />
+                </div>
+                {/* Row 4: Email + Phone */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    label={<>Email{qrBadge("email")}</>}
+                    id="email"
+                    type="email"
+                    value={fields.email}
+                    onChange={(e) => updateField("email", e.target.value)}
+                    confidence={parsed.email.confidence}
+                  />
+                  <Input
+                    label={<>Phone{qrBadge("phone")}</>}
+                    id="phone"
+                    type="tel"
+                    value={fields.phone}
+                    onChange={(e) => updateField("phone", e.target.value)}
+                    confidence={parsed.phone.confidence}
+                  />
+                </div>
+                {/* Row 5: Website + Address */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    label={<>Website{qrBadge("website")}</>}
+                    id="website"
+                    value={fields.website}
+                    onChange={(e) => updateField("website", e.target.value)}
+                    confidence={parsed.website.confidence}
+                  />
+                  <Input
+                    label="Address"
+                    id="address"
+                    value={fields.address}
+                    onChange={(e) => updateField("address", e.target.value)}
+                  />
+                </div>
+                {/* Row 6: City + Country */}
+                <div className="grid grid-cols-2 gap-2">
                   <Input
                     label="City"
                     id="city"
@@ -418,16 +452,19 @@ export default function ScanPage() {
                     onChange={(e) => updateField("country", e.target.value)}
                   />
                 </div>
+                {/* Row 7: Notes - compact */}
                 <Textarea
                   label="Notes"
                   id="notes"
                   value={fields.notes}
                   onChange={(e) => updateField("notes", e.target.value)}
+                  rows={2}
                 />
               </div>
             </div>
 
-            <div className="flex gap-3 pt-2">
+            {/* Sticky action bar */}
+            <div className="sticky bottom-0 -mx-4 px-4 py-3 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8 bg-bg/90 backdrop-blur-md border-t border-border flex gap-3">
               <Button onClick={handleSave} loading={saving} className="flex-1">
                 Save Lead
               </Button>

@@ -1,4 +1,4 @@
-# BridgeLeads
+# BRIDGE Vault
 
 Scan business cards, extract contact info with OCR, and manage your leads. Mobile-first dark enterprise SaaS built with Next.js, Supabase, and TypeScript.
 

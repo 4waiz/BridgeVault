@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -19,12 +18,6 @@ export default function SignInPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const router = useRouter();
-  const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
-
-  const logoSrc = mounted && resolvedTheme === "light" ? "/svg (1).svg" : "/svg.svg";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,7 +57,7 @@ export default function SignInPage() {
 
   return (
     <div className="min-h-dvh bg-bg flex flex-col lg:flex-row relative overflow-hidden">
-      {/* â”€â”€ Left branding panel (desktop only) â”€â”€ */}
+      {/* — Left branding panel (desktop only) — */}
       <div className="hidden lg:flex lg:w-[45%] relative flex-col items-center justify-center p-12">
         {/* Background glow */}
         <div className="absolute inset-0 hero-glow pointer-events-none" aria-hidden="true" />
@@ -80,11 +73,12 @@ export default function SignInPage() {
 
         <div className="relative z-10 flex flex-col items-center text-center max-w-sm">
           <Image
-            src={logoSrc}
+            src="/svg.svg"
             alt="BridgeLeads"
-            width={72}
-            height={72}
-            className="h-18 w-18 mb-8"
+            width={96}
+            height={96}
+            className="h-22 w-22 mb-8"
+            unoptimized
           />
           <h2 className="text-3xl font-extrabold tracking-tight mb-4">
             Turn cards into
@@ -116,7 +110,7 @@ export default function SignInPage() {
         <div className="absolute right-0 top-[15%] bottom-[15%] w-px bg-linear-to-b from-transparent via-white/6 to-transparent" />
       </div>
 
-      {/* â”€â”€ Right form panel â”€â”€ */}
+      {/* — Right form panel — */}
       <div className="flex-1 flex flex-col items-center justify-center px-5 sm:px-8 py-12 sm:py-16 relative">
         {/* Mobile background glow */}
         <div className="lg:hidden absolute inset-0 hero-glow pointer-events-none" aria-hidden="true" />
@@ -135,11 +129,12 @@ export default function SignInPage() {
           <div className="text-center mb-8 sm:mb-10">
             <Link href="/" className="lg:hidden inline-flex items-center justify-center mb-6">
               <Image
-                src={logoSrc}
+                src="/svg.svg"
                 alt="BridgeLeads"
-                width={48}
-                height={48}
-                className="h-12 w-12"
+                width={64}
+                height={64}
+                className="h-14 w-14"
+                unoptimized
               />
             </Link>
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">

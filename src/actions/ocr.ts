@@ -4,9 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getOCRProvider } from "@/lib/ocr";
 import { enrichLead } from "@/lib/enrichment";
 import { findDuplicates } from "@/lib/duplicates";
+import { decodeQRFromImage, parseQRPayload, mergeOCRAndQR } from "@/lib/qr";
 import type { ParsedBusinessCard, DuplicateWarning } from "@/types";
 
-/** Step 1: Extract card data via OCR only — fast path to show results */
+/** Step 1: Extract card data via OCR + QR — fast path to show results */
 export async function processBusinessCard(formData: FormData): Promise<{
   parsed: ParsedBusinessCard | null;
   enrichment: { domain: string | null; summary: string; contact_methods: string[] } | null;
@@ -32,9 +33,19 @@ export async function processBusinessCard(formData: FormData): Promise<{
     const buffer = Buffer.from(arrayBuffer);
     const mimeType = file.type || "image/jpeg";
 
-    // Run OCR
+    // Run OCR and QR detection in parallel
     const provider = getOCRProvider();
-    const parsed = await provider.extractBusinessCard(buffer, mimeType);
+    const [ocrResult, qrRaw] = await Promise.all([
+      provider.extractBusinessCard(buffer, mimeType),
+      decodeQRFromImage(buffer, mimeType),
+    ]);
+
+    // Merge OCR + QR results if QR found
+    let parsed: ParsedBusinessCard = ocrResult;
+    if (qrRaw) {
+      const qrData = parseQRPayload(qrRaw);
+      parsed = mergeOCRAndQR(ocrResult, qrData, qrRaw);
+    }
 
     // Enrich (instant — pure computation)
     const enrichment = enrichLead(parsed);

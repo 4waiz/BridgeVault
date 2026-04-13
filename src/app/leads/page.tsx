@@ -1,26 +1,32 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   Search,
   Download,
-  Filter,
   ChevronRight,
   Mail,
   Phone,
   Building2,
+  Plus,
+  X,
+  Save,
+  FileText,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LeadCardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { getLeads } from "@/actions/leads";
+import { getLeads, createLead, saveDraft, getCurrentDraft, discardDraft } from "@/actions/leads";
 import { formatDate, truncate } from "@/lib/utils";
-import type { LeadWithTags, LeadStatus } from "@/types";
+import type { LeadWithTags, LeadStatus, Lead } from "@/types";
 
 const STATUS_TABS: { value: LeadStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
@@ -38,6 +44,21 @@ const SORT_OPTIONS = [
   { value: "status", label: "Status" },
 ];
 
+const EMPTY_FIELDS = {
+  full_name: "",
+  first_name: "",
+  last_name: "",
+  job_title: "",
+  company: "",
+  email: "",
+  phone: "",
+  website: "",
+  address: "",
+  city: "",
+  country: "",
+  notes: "",
+};
+
 export default function LeadsPage() {
   const [leads, setLeads] = useState<LeadWithTags[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +67,15 @@ export default function LeadsPage() {
   const [sort, setSort] = useState("newest");
   const [exporting, setExporting] = useState(false);
   const { toast } = useToast();
+
+  // Manual add panel state
+  const [showAddPanel, setShowAddPanel] = useState(false);
+  const [addFields, setAddFields] = useState({ ...EMPTY_FIELDS });
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [draftStatus, setDraftStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [savingLead, setSavingLead] = useState(false);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [loadingDraft, setLoadingDraft] = useState(false);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -62,6 +92,134 @@ export default function LeadsPage() {
     const timer = setTimeout(fetchLeads, 300);
     return () => clearTimeout(timer);
   }, [fetchLeads]);
+
+  // Auto-save draft when fields change
+  useEffect(() => {
+    if (!showAddPanel) return;
+    // Only auto-save if there's some data entered
+    const hasData = Object.values(addFields).some((v) => v.trim() !== "");
+    if (!hasData) return;
+
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      setDraftStatus("saving");
+      const result = await saveDraft({ id: draftId || undefined, ...addFields });
+      if (result.data?.id && !draftId) {
+        setDraftId(result.data.id);
+      }
+      setDraftStatus("saved");
+    }, 2000);
+
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addFields, showAddPanel]);
+
+  async function handleOpenAddPanel() {
+    setShowAddPanel(true);
+    setLoadingDraft(true);
+    // Check for existing draft
+    const result = await getCurrentDraft();
+    if (result.data) {
+      const d = result.data as Lead;
+      setDraftId(d.id);
+      setAddFields({
+        full_name: d.full_name || "",
+        first_name: d.first_name || "",
+        last_name: d.last_name || "",
+        job_title: d.job_title || "",
+        company: d.company || "",
+        email: d.email || "",
+        phone: d.phone || "",
+        website: d.website || "",
+        address: d.address || "",
+        city: d.city || "",
+        country: d.country || "",
+        notes: d.notes || "",
+      });
+      setDraftStatus("saved");
+    }
+    setLoadingDraft(false);
+  }
+
+  function handleCloseAddPanel() {
+    setShowAddPanel(false);
+    // Don't clear — draft is persisted
+  }
+
+  function updateAddField(key: keyof typeof addFields, value: string) {
+    setAddFields((prev) => ({ ...prev, [key]: value }));
+    setDraftStatus("idle");
+  }
+
+  async function handleSaveDraftExplicit() {
+    setDraftStatus("saving");
+    const result = await saveDraft({ id: draftId || undefined, ...addFields });
+    if (result.error) {
+      toast(result.error, "error");
+      setDraftStatus("idle");
+      return;
+    }
+    if (result.data?.id && !draftId) {
+      setDraftId(result.data.id);
+    }
+    setDraftStatus("saved");
+    toast("Draft saved", "success");
+  }
+
+  async function handleSaveAsLead() {
+    if (!addFields.full_name.trim()) {
+      toast("Name is required", "error");
+      return;
+    }
+
+    setSavingLead(true);
+
+    // If we have a draft, promote it; otherwise create new
+    if (draftId) {
+      const { updateLead } = await import("@/actions/leads");
+      const result = await updateLead(draftId, {
+        ...addFields,
+        is_draft: false,
+        status: "new",
+      });
+      if (result.error) {
+        toast(result.error, "error");
+        setSavingLead(false);
+        return;
+      }
+    } else {
+      const result = await createLead({
+        ...addFields,
+        is_draft: false,
+      });
+      if (result.error) {
+        toast(result.error, "error");
+        setSavingLead(false);
+        return;
+      }
+    }
+
+    toast("Lead saved!", "success");
+    setSavingLead(false);
+    setShowAddPanel(false);
+    setAddFields({ ...EMPTY_FIELDS });
+    setDraftId(null);
+    setDraftStatus("idle");
+    fetchLeads();
+  }
+
+  async function handleDiscardDraft() {
+    if (draftId) {
+      await discardDraft(draftId);
+    }
+    setShowAddPanel(false);
+    setAddFields({ ...EMPTY_FIELDS });
+    setDraftId(null);
+    setDraftStatus("idle");
+    toast("Draft discarded", "info");
+  }
 
   async function handleExport() {
     setExporting(true);
@@ -93,17 +251,187 @@ export default function LeadsPage() {
       <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h1 className="text-2xl font-bold">Leads</h1>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleExport}
-            loading={exporting}
-            className="gap-2 w-fit"
-          >
-            <Download className="h-4 w-4" />
-            Export Excel
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleOpenAddPanel}
+              size="sm"
+              className="gap-1.5"
+            >
+              <Plus className="h-4 w-4" />
+              Add Lead
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExport}
+              loading={exporting}
+              className="gap-2 w-fit"
+            >
+              <Download className="h-4 w-4" />
+              Export Excel
+            </Button>
+          </div>
         </div>
+
+        {/* Inline Add Lead Panel */}
+        {showAddPanel && (
+          <div className="rounded-2xl border border-brand/20 bg-panel overflow-hidden animate-fade-in">
+            {/* Panel header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-panel-2">
+              <div className="flex items-center gap-2">
+                <Plus className="h-4 w-4 text-brand" />
+                <span className="font-semibold text-sm">New Lead</span>
+                {/* Draft status indicator */}
+                <span className="text-xs text-text-muted">
+                  {draftStatus === "saving" && (
+                    <span className="flex items-center gap-1 text-text-muted">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Saving...
+                    </span>
+                  )}
+                  {draftStatus === "saved" && (
+                    <span className="text-success">Draft saved</span>
+                  )}
+                  {draftStatus === "idle" && draftId && (
+                    <span className="text-warning">Unsaved changes</span>
+                  )}
+                </span>
+              </div>
+              <button
+                onClick={handleCloseAddPanel}
+                className="p-1 rounded-lg text-text-muted hover:text-text hover:bg-panel transition-colors cursor-pointer"
+                aria-label="Close panel"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {loadingDraft ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 text-brand animate-spin" />
+              </div>
+            ) : (
+              <div className="p-4 space-y-3">
+                {/* Compact form grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <Input
+                    label="Full Name"
+                    id="add_full_name"
+                    value={addFields.full_name}
+                    onChange={(e) => updateAddField("full_name", e.target.value)}
+                    placeholder="Jane Smith"
+                  />
+                  <Input
+                    label="Email"
+                    id="add_email"
+                    type="email"
+                    value={addFields.email}
+                    onChange={(e) => updateAddField("email", e.target.value)}
+                    placeholder="jane@company.com"
+                  />
+                  <Input
+                    label="Phone"
+                    id="add_phone"
+                    type="tel"
+                    value={addFields.phone}
+                    onChange={(e) => updateAddField("phone", e.target.value)}
+                    placeholder="+1 555-1234"
+                  />
+                  <Input
+                    label="Job Title"
+                    id="add_job_title"
+                    value={addFields.job_title}
+                    onChange={(e) => updateAddField("job_title", e.target.value)}
+                    placeholder="VP of Sales"
+                  />
+                  <Input
+                    label="Company"
+                    id="add_company"
+                    value={addFields.company}
+                    onChange={(e) => updateAddField("company", e.target.value)}
+                    placeholder="Acme Corp"
+                  />
+                  <Input
+                    label="Website"
+                    id="add_website"
+                    value={addFields.website}
+                    onChange={(e) => updateAddField("website", e.target.value)}
+                    placeholder="acme.com"
+                  />
+                  <Input
+                    label="First Name"
+                    id="add_first_name"
+                    value={addFields.first_name}
+                    onChange={(e) => updateAddField("first_name", e.target.value)}
+                  />
+                  <Input
+                    label="Last Name"
+                    id="add_last_name"
+                    value={addFields.last_name}
+                    onChange={(e) => updateAddField("last_name", e.target.value)}
+                  />
+                  <Input
+                    label="Address"
+                    id="add_address"
+                    value={addFields.address}
+                    onChange={(e) => updateAddField("address", e.target.value)}
+                  />
+                  <Input
+                    label="City"
+                    id="add_city"
+                    value={addFields.city}
+                    onChange={(e) => updateAddField("city", e.target.value)}
+                  />
+                  <Input
+                    label="Country"
+                    id="add_country"
+                    value={addFields.country}
+                    onChange={(e) => updateAddField("country", e.target.value)}
+                  />
+                </div>
+                <Textarea
+                  label="Notes"
+                  id="add_notes"
+                  value={addFields.notes}
+                  onChange={(e) => updateAddField("notes", e.target.value)}
+                  rows={2}
+                  placeholder="Additional notes..."
+                />
+
+                {/* Action buttons */}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button
+                    onClick={handleSaveAsLead}
+                    loading={savingLead}
+                    className="gap-1.5"
+                    size="sm"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    Save Lead
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={handleSaveDraftExplicit}
+                    size="sm"
+                    className="gap-1.5"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Save as Draft
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={handleDiscardDraft}
+                    size="sm"
+                    className="gap-1.5 text-danger hover:text-danger"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Filters */}
         <div className="space-y-3">
@@ -176,13 +504,19 @@ export default function LeadsPage() {
             description={
               search
                 ? "Try adjusting your search or filters"
-                : "Scan a business card to create your first lead"
+                : "Scan a business card or add a lead manually"
             }
             action={
               !search ? (
-                <Link href="/scan">
-                  <Button>Scan Card</Button>
-                </Link>
+                <div className="flex gap-2">
+                  <Link href="/scan">
+                    <Button>Scan Card</Button>
+                  </Link>
+                  <Button variant="secondary" onClick={handleOpenAddPanel} className="gap-1.5">
+                    <Plus className="h-4 w-4" />
+                    Add Lead
+                  </Button>
+                </div>
               ) : undefined
             }
           />

@@ -37,22 +37,6 @@
   --ring: rgba(243, 106, 33, 0.35);
 }
 
-.light {
-  --bg: #f5f5f7;
-  --bg-elevated: #ffffff;
-  --panel: #ffffff;
-  --panel-2: #f0f0f2;
-  --border: #e0e0e5;
-  --text: #1a1a1a;
-  --text-muted: #6b7280;
-  --brand: #f36a21;
-  --brand-strong: #e55d15;
-  --brand-soft: rgba(243, 106, 33, 0.1);
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
-  --ring: rgba(243, 106, 33, 0.3);
-}
 
 @layer base {
   * {
@@ -63,10 +47,6 @@
 
   html {
     color-scheme: dark;
-  }
-
-  html.light {
-    color-scheme: light;
   }
 
   body {

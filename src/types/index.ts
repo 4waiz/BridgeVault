@@ -1,4 +1,4 @@
-export type LeadStatus = "new" | "reviewed" | "contacted" | "qualified" | "archived";
+export type LeadStatus = "new" | "reviewed" | "contacted" | "qualified" | "archived" | "draft";
 
 export interface Lead {
   id: string;
@@ -22,7 +22,10 @@ export interface Lead {
   ocr_json: Record<string, unknown> | null;
   enrichment_json: Record<string, unknown> | null;
   duplicate_of: string | null;
+  is_draft: boolean;
   source: string;
+  qr_raw: string | null;
+  qr_json: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -80,6 +83,8 @@ export interface ParsedBusinessCard {
   country: ParsedField;
   notes: ParsedField;
   raw_text: string;
+  qr_raw?: string;
+  qr_source?: Partial<Record<keyof Omit<ParsedBusinessCard, "raw_text" | "qr_raw" | "qr_source">, boolean>>;
 }
 
 export interface LeadWithTags extends Lead {

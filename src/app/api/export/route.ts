@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get("status") as LeadStatus | "all" | null;
   const sort = searchParams.get("sort") || "newest";
 
-  let query = supabase.from("leads").select("*").eq("user_id", user.id);
+  let query = supabase.from("leads").select("*").eq("user_id", user.id).eq("is_draft", false);
 
   if (status && status !== "all") {
     query = query.eq("status", status);

@@ -27,18 +27,12 @@ export default async function LandingPage() {
         <div className="px-5 sm:px-8 h-16 sm:h-[72px] flex items-center justify-between max-w-6xl mx-auto w-full">
           <Link href="/" className="flex items-center">
             <Image
-              src="/svg (1).svg"
-              alt="BridgeLeads"
-              width={950}
-              height={261}
-              className="h-10 w-auto dark:hidden"
-            />
-            <Image
               src="/svg.svg"
               alt="BridgeLeads"
               width={950}
               height={261}
-              className="h-10 w-auto hidden dark:block"
+              className="h-11 sm:h-12 w-auto"
+              unoptimized
             />
           </Link>
 
@@ -248,8 +242,7 @@ export default async function LandingPage() {
       {/* â”€â”€ Footer â”€â”€ */}
       <footer className="py-8 text-center border-t border-white/[0.04]">
         <div className="flex flex-col items-center gap-3 px-5">
-          <Image src="/svg (1).svg" alt="BridgeLeads" width={950} height={261} className="h-7 w-auto opacity-40 dark:hidden" />
-          <Image src="/svg.svg" alt="BridgeLeads" width={950} height={261} className="h-7 w-auto opacity-40 hidden dark:block" />
+          <Image src="/svg.svg" alt="BridgeLeads" width={950} height={261} className="h-8 w-auto opacity-40" unoptimized />
           <p className="text-xs text-text-muted/40">
             &copy; {new Date().getFullYear()} BridgeLeads. All rights reserved.
           </p>
