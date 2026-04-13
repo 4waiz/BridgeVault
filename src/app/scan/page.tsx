@@ -8,9 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { processBusinessCard } from "@/actions/ocr";
+import { processBusinessCard, checkCardDuplicates, uploadCardImage } from "@/actions/ocr";
 import { createLead } from "@/actions/leads";
-import { enrichLead } from "@/lib/enrichment";
 import type { ParsedBusinessCard, DuplicateWarning } from "@/types";
 
 type Step = "capture" | "processing" | "review";
@@ -21,7 +20,7 @@ export default function ScanPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParsedBusinessCard | null>(null);
   const [duplicates, setDuplicates] = useState<DuplicateWarning[]>([]);
-  const [imagePath, setImagePath] = useState<string | null>(null);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
   const [enrichmentData, setEnrichmentData] = useState<{
     domain: string | null;
     summary: string;
@@ -78,8 +77,6 @@ export default function ScanPage() {
     }
 
     setParsed(result.parsed);
-    setDuplicates(result.duplicates);
-    setImagePath(result.imagePath);
     setEnrichmentData(
       result.enrichment
         ? { domain: result.enrichment.domain, summary: result.enrichment.summary }
@@ -87,7 +84,7 @@ export default function ScanPage() {
     );
 
     // Populate form fields
-    setFields({
+    const extractedFields = {
       full_name: result.parsed.full_name.value,
       first_name: result.parsed.first_name.value,
       last_name: result.parsed.last_name.value,
@@ -100,9 +97,22 @@ export default function ScanPage() {
       city: result.parsed.city.value,
       country: result.parsed.country.value,
       notes: result.parsed.notes.value,
-    });
+    };
+    setFields(extractedFields);
 
+    // Show review immediately
     setStep("review");
+
+    // Check duplicates in background
+    setCheckingDuplicates(true);
+    checkCardDuplicates({
+      email: extractedFields.email,
+      phone: extractedFields.phone,
+      full_name: extractedFields.full_name,
+      company: extractedFields.company,
+    })
+      .then((res) => setDuplicates(res.duplicates))
+      .finally(() => setCheckingDuplicates(false));
   }
 
   async function handleSave() {
@@ -113,6 +123,20 @@ export default function ScanPage() {
 
     setSaving(true);
 
+    // Upload image to storage
+    let imagePath: string | undefined;
+    if (imageFile) {
+      const uploadForm = new FormData();
+      uploadForm.append("image", imageFile);
+      const upload = await uploadCardImage(uploadForm);
+      if (upload.error) {
+        toast(upload.error, "error");
+        setSaving(false);
+        return;
+      }
+      imagePath = upload.imagePath || undefined;
+    }
+
     const result = await createLead({
       ...fields,
       domain: enrichmentData?.domain || undefined,
@@ -120,7 +144,7 @@ export default function ScanPage() {
       ocr_raw_text: parsed?.raw_text,
       ocr_json: parsed as unknown as Record<string, unknown>,
       enrichment_json: enrichmentData as unknown as Record<string, unknown>,
-      image_path: imagePath || undefined,
+      image_path: imagePath,
       image_name: imageFile?.name,
       image_mime: imageFile?.type,
     });
@@ -142,7 +166,7 @@ export default function ScanPage() {
     setImagePreview(null);
     setParsed(null);
     setDuplicates([]);
-    setImagePath(null);
+    setCheckingDuplicates(false);
     setEnrichmentData(null);
   }
 
@@ -263,6 +287,14 @@ export default function ScanPage() {
         {step === "review" && parsed && (
           <div className="space-y-6">
             {/* Duplicate warning */}
+            {checkingDuplicates && (
+              <div className="p-3 rounded-2xl border border-border bg-panel">
+                <div className="flex items-center gap-2 text-sm text-text-muted">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Checking for duplicates...
+                </div>
+              </div>
+            )}
             {duplicates.length > 0 && (
               <div className="p-4 rounded-2xl border border-warning/30 bg-warning/5">
                 <div className="flex items-start gap-3">
