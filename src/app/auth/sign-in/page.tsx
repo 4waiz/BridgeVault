@@ -75,9 +75,9 @@ export default function SignInPage() {
           <Image
             src="/svg.svg"
             alt="BRIDGE Vault"
-            width={96}
-            height={96}
-            className="h-32 w-32 mb-8"
+            width={256}
+            height={256}
+            className="h-64 w-64 mb-8"
             unoptimized
           />
           <h2 className="text-3xl font-extrabold tracking-tight mb-4">
@@ -131,9 +131,9 @@ export default function SignInPage() {
               <Image
                 src="/svg.svg"
                 alt="BRIDGE Vault"
-                width={64}
-                height={64}
-                className="h-20 w-20"
+                width={256}
+                height={256}
+                className="h-52 w-52"
                 unoptimized
               />
             </Link>
