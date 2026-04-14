@@ -150,20 +150,31 @@ All brand tokens are centralized in `src/app/globals.css`. To change the entire 
 
 All components reference these tokens, so changes propagate everywhere.
 
-## Deployment
+## Deployment (Cloudflare Workers)
 
-### Vercel (recommended)
+This app deploys to Cloudflare Workers via [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare).
+
+### Preview locally
 
 ```bash
-npm run build
-# Deploy via Vercel CLI or connect your git repo
+npm run preview
 ```
 
-Set environment variables in Vercel project settings.
+### Deploy to production
 
-### Other platforms
+```bash
+npm run deploy
+```
 
-The app is a standard Next.js application. Deploy to any platform that supports Next.js (Netlify, Railway, self-hosted, etc.).
+### Environment variables
+
+Set your environment variables in the Cloudflare dashboard under **Workers & Pages > bridge-vault > Settings > Variables**, or use a `.dev.vars` file for local development.
+
+### Upload (non-production branches)
+
+```bash
+npm run upload
+```
 
 ## Seed Data
 
