@@ -7,6 +7,26 @@ import { findDuplicates } from "@/lib/duplicates";
 import { decodeQRFromImage, parseQRPayload, mergeOCRAndQR } from "@/lib/qr";
 import type { ParsedBusinessCard, DuplicateWarning } from "@/types";
 
+/** Cap attacker-controlled uploads well below the body-size limit so one
+ *  request can't burn large amounts of LLM tokens, bandwidth, or memory. */
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // 4 MB — plenty for a compressed card image
+const ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
+
+function validateUpload(file: File | null): string | null {
+  if (!file || file.size === 0) return "No image provided";
+  if (file.size > MAX_UPLOAD_BYTES) return "Image too large (max 4 MB)";
+  const declared = (file.type || "").toLowerCase();
+  if (declared && !ALLOWED_MIME.has(declared)) return "Unsupported image type";
+  return null;
+}
+
 /** Step 1: Extract card data via OCR + QR — fast path to show results */
 export async function processBusinessCard(formData: FormData): Promise<{
   parsed: ParsedBusinessCard | null;
@@ -24,8 +44,9 @@ export async function processBusinessCard(formData: FormData): Promise<{
     }
 
     const file = formData.get("image") as File;
-    if (!file || file.size === 0) {
-      return { parsed: null, enrichment: null, error: "No image provided" };
+    const uploadError = validateUpload(file);
+    if (uploadError) {
+      return { parsed: null, enrichment: null, error: uploadError };
     }
 
     // Convert to buffer
@@ -33,11 +54,14 @@ export async function processBusinessCard(formData: FormData): Promise<{
     const buffer = Buffer.from(arrayBuffer);
     const mimeType = file.type || "image/jpeg";
 
-    // Run OCR and QR detection in parallel
+    // Run OCR and QR detection in parallel (QR has 2s timeout for serverless)
     const provider = getOCRProvider();
     const [ocrResult, qrRaw] = await Promise.all([
       provider.extractBusinessCard(buffer, mimeType),
-      decodeQRFromImage(buffer, mimeType),
+      Promise.race([
+        decodeQRFromImage(buffer, mimeType).catch(() => null),
+        new Promise<null>((r) => setTimeout(() => r(null), 2000)),
+      ]),
     ]);
 
     // Merge OCR + QR results if QR found
@@ -104,7 +128,8 @@ export async function scanAndSaveLead(formData: FormData): Promise<{
     if (!user) return { leadId: null, error: "Not authenticated" };
 
     const file = formData.get("image") as File;
-    if (!file || file.size === 0) return { leadId: null, error: "No image provided" };
+    const uploadError = validateUpload(file);
+    if (uploadError) return { leadId: null, error: uploadError };
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -112,15 +137,27 @@ export async function scanAndSaveLead(formData: FormData): Promise<{
 
     // Upload image to storage
     const tempId = crypto.randomUUID();
-    const ext = file.name.split(".").pop() || "jpg";
+    // Sanitize extension — attacker controls file.name, so strip anything that
+    // could traverse the storage path (`/`, `..`, nulls, etc).
+    const rawExt = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const ext = /^[a-z0-9]{1,8}$/.test(rawExt) ? rawExt : "jpg";
     const storagePath = `${user.id}/${tempId}/card.${ext}`;
+
+    // QR decode with 2s timeout — sharp can be slow on serverless
+    const qrWithTimeout = Promise.race([
+      decodeQRFromImage(buffer, mimeType).catch(() => null),
+      new Promise<null>((r) => setTimeout(() => r(null), 2000)),
+    ]);
 
     const [uploadResult, ocrResult, qrRaw] = await Promise.all([
       supabase.storage
         .from("business-cards")
         .upload(storagePath, buffer, { contentType: mimeType, upsert: true }),
-      getOCRProvider().extractBusinessCard(buffer, mimeType).catch(() => null),
-      decodeQRFromImage(buffer, mimeType).catch(() => null),
+      getOCRProvider().extractBusinessCard(buffer, mimeType).catch((e) => {
+        console.error("OCR failed:", e);
+        return null;
+      }),
+      qrWithTimeout,
     ]);
 
     if (uploadResult.error) {
@@ -199,14 +236,18 @@ export async function uploadCardImage(formData: FormData): Promise<{
     if (!user) return { imagePath: null, error: "Not authenticated" };
 
     const file = formData.get("image") as File;
-    if (!file || file.size === 0) return { imagePath: null, error: "No image provided" };
+    const validationError = validateUpload(file);
+    if (validationError) return { imagePath: null, error: validationError };
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const mimeType = file.type || "image/jpeg";
 
     const tempId = crypto.randomUUID();
-    const ext = file.name.split(".").pop() || "jpg";
+    // Sanitize extension — attacker controls file.name, so strip anything that
+    // could traverse the storage path (`/`, `..`, nulls, etc).
+    const rawExt = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const ext = /^[a-z0-9]{1,8}$/.test(rawExt) ? rawExt : "jpg";
     const storagePath = `${user.id}/${tempId}/card.${ext}`;
 
     const { error: uploadError } = await supabase.storage

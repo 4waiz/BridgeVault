@@ -31,10 +31,10 @@ export function Badge({ children, variant = "default", className }: BadgeProps) 
 }
 
 const statusVariantMap: Record<LeadStatus, BadgeProps["variant"]> = {
-  new: "brand",
-  reviewed: "default",
+  reviewed: "brand",
   contacted: "warning",
   qualified: "success",
+  rejected: "danger",
   archived: "muted",
   draft: "muted",
 };

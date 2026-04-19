@@ -44,9 +44,9 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { label: "Total", value: stats.total, color: "text-text" },
-            { label: "New", value: stats.new, color: "text-brand" },
             { label: "Contacted", value: stats.contacted, color: "text-warning" },
             { label: "Qualified", value: stats.qualified, color: "text-success" },
+            { label: "Rejected", value: stats.rejected, color: "text-danger" },
           ].map((stat) => (
             <div
               key={stat.label}

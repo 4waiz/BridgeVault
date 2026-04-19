@@ -4,6 +4,17 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import type { LeadStatus } from "@/types";
 
+/** Escape user input before interpolating into a PostgREST `.or()` filter.
+ *  Strips characters that would break out of the `ilike.` pattern
+ *  (commas split clauses; parens/dots form new filter expressions). */
+function escapeSearchTerm(raw: string): string {
+  return raw
+    .slice(0, 80)
+    .replace(/[,()%*\\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export async function createLead(data: {
   full_name: string;
   first_name?: string;
@@ -45,7 +56,7 @@ export async function createLead(data: {
     .insert({
       user_id: user.id,
       ...leadData,
-      status: leadData.is_draft ? "draft" : (leadData.status || "new"),
+      status: leadData.is_draft ? "draft" : (leadData.status || "reviewed"),
       is_draft: leadData.is_draft || false,
     })
     .select()
@@ -123,7 +134,7 @@ export async function updateLead(
   if (data.is_draft === false) {
     (leadData as Record<string, unknown>).is_draft = false;
     if (!leadData.status || leadData.status === "draft") {
-      leadData.status = "new";
+      leadData.status = "reviewed";
     }
   }
 
@@ -270,11 +281,20 @@ export async function deleteLead(leadId: string) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
-  // Delete storage files
+  // Verify ownership first, then fetch attachments scoped to this user.
+  const { data: ownedLead } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("id", leadId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!ownedLead) return { error: "Lead not found" };
+
   const { data: attachments } = await supabase
     .from("lead_attachments")
     .select("storage_path")
-    .eq("lead_id", leadId);
+    .eq("lead_id", leadId)
+    .eq("user_id", user.id);
 
   if (attachments?.length) {
     await supabase.storage
@@ -318,9 +338,12 @@ export async function getLeads(params?: {
   }
 
   if (params?.search) {
-    query = query.or(
-      `full_name.ilike.%${params.search}%,company.ilike.%${params.search}%,email.ilike.%${params.search}%,phone.ilike.%${params.search}%`
-    );
+    const safe = escapeSearchTerm(params.search);
+    if (safe) {
+      query = query.or(
+        `full_name.ilike.%${safe}%,company.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%`
+      );
+    }
   }
 
   switch (params?.sort) {
@@ -362,10 +385,25 @@ export async function getLead(leadId: string) {
 
 export async function getLeadActivity(leadId: string) {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  // Verify the caller owns the lead before returning its activity log.
+  const { data: ownedLead } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("id", leadId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!ownedLead) return [];
+
   const { data } = await supabase
     .from("lead_activity")
     .select("*")
     .eq("lead_id", leadId)
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -395,7 +433,7 @@ export async function getLeadStats() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { total: 0, new: 0, reviewed: 0, contacted: 0, qualified: 0, archived: 0 };
+  if (!user) return { total: 0, reviewed: 0, contacted: 0, qualified: 0, rejected: 0, archived: 0 };
 
   const { data } = await supabase
     .from("leads")
@@ -403,7 +441,7 @@ export async function getLeadStats() {
     .eq("user_id", user.id)
     .eq("is_draft", false);
 
-  const stats = { total: 0, new: 0, reviewed: 0, contacted: 0, qualified: 0, archived: 0 };
+  const stats = { total: 0, reviewed: 0, contacted: 0, qualified: 0, rejected: 0, archived: 0 };
   if (data) {
     stats.total = data.length;
     data.forEach((lead) => {

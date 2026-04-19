@@ -19,8 +19,8 @@ export const leadSchema = z.object({
   country: z.string().max(100).optional().default(""),
   notes: z.string().max(5000).optional().default(""),
   status: z
-    .enum(["new", "reviewed", "contacted", "qualified", "archived", "draft"])
-    .default("new"),
+    .enum(["reviewed", "contacted", "qualified", "rejected", "archived", "draft"])
+    .default("reviewed"),
   tags: z.array(z.string()).optional().default([]),
 });
 

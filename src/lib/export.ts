@@ -21,6 +21,14 @@ const COLUMNS = [
   { key: "updated_at", header: "Updated At" },
 ] as const;
 
+/** Neutralize CSV/XLSX formula injection. A cell that begins with
+ *  = + - @ \t or \r is interpreted as a formula when opened in Excel /
+ *  Google Sheets / LibreOffice, so prefix it with a leading apostrophe. */
+function safeCell(value: string | null): string | null {
+  if (!value) return value;
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 export function generateExcelBuffer(leads: Lead[]): Buffer {
   const rows = leads.map((lead) => {
     const row: Record<string, string | null> = {};
@@ -37,7 +45,7 @@ export function generateExcelBuffer(leads: Lead[]): Buffer {
             })
           : null;
       } else {
-        row[col.header] = (value as string) || null;
+        row[col.header] = safeCell((value as string) || null);
       }
     });
     return row;

@@ -31,12 +31,27 @@ import { formatDateTime } from "@/lib/utils";
 import type { LeadWithTags, LeadActivity, LeadStatus } from "@/types";
 
 const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
-  { value: "new", label: "New" },
   { value: "reviewed", label: "Reviewed" },
   { value: "contacted", label: "Contacted" },
   { value: "qualified", label: "Qualified" },
+  { value: "rejected", label: "Rejected" },
   { value: "archived", label: "Archived" },
 ];
+
+/** Build a safe href for the website column. Only allows http/https — blocks
+ *  javascript:, data:, and malformed schemes that could slip through a naive
+ *  `startsWith("http")` check. OCR/QR output is attacker-controlled. */
+function safeWebsiteHref(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
 
 export default function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -342,7 +357,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   {[
                     { icon: Mail, label: "Email", value: lead.email, href: lead.email ? `mailto:${lead.email}` : undefined },
                     { icon: PhoneIcon, label: "Phone", value: lead.phone, href: lead.phone ? `tel:${lead.phone}` : undefined },
-                    { icon: Globe, label: "Website", value: lead.website || lead.domain, href: lead.website ? (lead.website.startsWith("http") ? lead.website : `https://${lead.website}`) : undefined },
+                    { icon: Globe, label: "Website", value: lead.website || lead.domain, href: safeWebsiteHref(lead.website) },
                     { icon: Building2, label: "Company", value: lead.company },
                     { icon: MapPin, label: "Address", value: [lead.address, lead.city, lead.country].filter(Boolean).join(", ") },
                   ].map(

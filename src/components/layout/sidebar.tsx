@@ -6,7 +6,7 @@ import {
   LayoutDashboard,
   Camera,
   Users,
-  Settings,
+  UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +14,7 @@ const sidebarItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/scan", label: "Scan Card", icon: Camera },
   { href: "/leads", label: "All Leads", icon: Users },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/account", label: "Account", icon: UserCircle },
 ];
 
 export function Sidebar() {

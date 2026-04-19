@@ -25,9 +25,16 @@ export async function GET(request: NextRequest) {
   }
 
   if (search) {
-    query = query.or(
-      `full_name.ilike.%${search}%,company.ilike.%${search}%,email.ilike.%${search}%`
-    );
+    const safe = search
+      .slice(0, 80)
+      .replace(/[,()%*\\]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (safe) {
+      query = query.or(
+        `full_name.ilike.%${safe}%,company.ilike.%${safe}%,email.ilike.%${safe}%`
+      );
+    }
   }
 
   switch (sort) {

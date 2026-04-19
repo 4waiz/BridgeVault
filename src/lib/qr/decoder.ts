@@ -1,17 +1,23 @@
 import jsQR from "jsqr";
-import sharp from "sharp";
 
 /**
  * Decode QR code from an image buffer.
  * Returns the raw QR string payload, or null if no QR found.
+ * Uses dynamic import for sharp so the module doesn't crash on
+ * platforms where native addons aren't available (e.g. Cloudflare).
  */
 export async function decodeQRFromImage(
   imageBuffer: Buffer,
-  mimeType: string
+  _mimeType: string
 ): Promise<string | null> {
   try {
-    // Use sharp to convert any image format to raw RGBA pixel data
-    const { data, info } = await sharp(imageBuffer)
+    const sharp = (await import("sharp")).default;
+
+    // Bound attacker-controlled input so a pathological image (e.g. a huge
+    // PNG or pixel-bomb) can't exhaust memory. Also downscale before raw
+    // decoding — jsQR works fine on images up to ~2048px.
+    const { data, info } = await sharp(imageBuffer, { limitInputPixels: 20_000_000 })
+      .resize(2048, 2048, { fit: "inside", withoutEnlargement: true })
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
@@ -28,7 +34,7 @@ export async function decodeQRFromImage(
 
     return null;
   } catch (error) {
-    console.warn("QR decode failed:", error);
+    console.warn("QR decode skipped:", error);
     return null;
   }
 }

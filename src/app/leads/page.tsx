@@ -30,10 +30,10 @@ import type { LeadWithTags, LeadStatus, Lead } from "@/types";
 
 const STATUS_TABS: { value: LeadStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "new", label: "New" },
   { value: "reviewed", label: "Reviewed" },
   { value: "contacted", label: "Contacted" },
   { value: "qualified", label: "Qualified" },
+  { value: "rejected", label: "Rejected" },
   { value: "archived", label: "Archived" },
 ];
 
@@ -182,7 +182,7 @@ export default function LeadsPage() {
       const result = await updateLead(draftId, {
         ...addFields,
         is_draft: false,
-        status: "new",
+        status: "reviewed",
       });
       if (result.error) {
         toast(result.error, "error");
