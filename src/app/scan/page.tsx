@@ -48,18 +48,19 @@ export default function ScanPage() {
 
   const handleFile = useCallback(
     async (file: File) => {
-      let compressed: File;
-      try {
-        // QR codes lose detail at low quality — keep them larger and sharper.
-        compressed =
-          mode === "qr"
-            ? await compressImage(file, 1600, 0.92)
-            : await compressImage(file);
-      } catch {
-        compressed = file;
+      // For QR mode we hand off the original file: the decoder runs in the
+      // browser at full quality (recompression destroys QR detail), and the
+      // queue then compresses it before upload if needed.
+      let toEnqueue: File = file;
+      if (mode === "card") {
+        try {
+          toEnqueue = await compressImage(file);
+        } catch {
+          toEnqueue = file;
+        }
       }
 
-      enqueueScan(compressed, mode);
+      enqueueScan(toEnqueue, mode);
 
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (cameraInputRef.current) cameraInputRef.current.value = "";

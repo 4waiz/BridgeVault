@@ -275,7 +275,13 @@ export async function uploadCardImage(formData: FormData): Promise<{
   }
 }
 
-/** Scan a QR code image (no OCR) and save the contact as a lead. */
+/**
+ * Save a QR-only lead.
+ *
+ * The QR is decoded on the client (sharp + jsQR can't run on Cloudflare Workers,
+ * which is the production runtime). The client sends the raw payload string +
+ * the original image so we can attach it to the lead record.
+ */
 export async function scanQRAndSaveLead(formData: FormData): Promise<{
   leadId: string | null;
   error?: string;
@@ -287,40 +293,44 @@ export async function scanQRAndSaveLead(formData: FormData): Promise<{
     } = await supabase.auth.getUser();
     if (!user) return { leadId: null, error: "Not authenticated" };
 
-    const file = formData.get("image") as File;
-    const uploadError = validateUpload(file);
-    if (uploadError) return { leadId: null, error: uploadError };
-
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const mimeType = file.type || "image/jpeg";
-
-    // Decode first so we don't upload an orphan file when no QR is found.
-    // Allow more time than the card flow — we run several preprocessing passes.
-    const qrRaw = await Promise.race([
-      decodeQRFromImage(buffer, mimeType).catch(() => null),
-      new Promise<null>((r) => setTimeout(() => r(null), 12_000)),
-    ]);
-
+    const qrRaw = (formData.get("qr_raw") as string | null)?.trim();
     if (!qrRaw) {
-      return { leadId: null, error: "No QR code detected in image" };
+      return { leadId: null, error: "Missing QR payload" };
+    }
+    // Bound payload to keep DB rows reasonable. QR codes max out around 3KB
+    // for a Version 40 alphanumeric, so 4KB is plenty of headroom.
+    if (qrRaw.length > 4096) {
+      return { leadId: null, error: "QR payload too large" };
+    }
+
+    const file = formData.get("image") as File | null;
+    // Image is optional for QR — we still want a lead if all we have is the payload.
+    let storagePath: string | undefined;
+    if (file && file.size > 0) {
+      const uploadError = validateUpload(file);
+      if (uploadError) return { leadId: null, error: uploadError };
+
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const mimeType = file.type || "image/jpeg";
+
+      const tempId = crypto.randomUUID();
+      const rawExt = (file.name.split(".").pop() || "jpg").toLowerCase();
+      const ext = /^[a-z0-9]{1,8}$/.test(rawExt) ? rawExt : "jpg";
+      storagePath = `${user.id}/${tempId}/qr.${ext}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from("business-cards")
+        .upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+
+      if (uploadErr) {
+        console.error("Upload error:", uploadErr);
+        // Image upload failing shouldn't block the lead — drop the image and continue.
+        storagePath = undefined;
+      }
     }
 
     const qrData: QRContactData = parseQRPayload(qrRaw);
-
-    const tempId = crypto.randomUUID();
-    const rawExt = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const ext = /^[a-z0-9]{1,8}$/.test(rawExt) ? rawExt : "jpg";
-    const storagePath = `${user.id}/${tempId}/qr.${ext}`;
-
-    const { error: uploadErr } = await supabase.storage
-      .from("business-cards")
-      .upload(storagePath, buffer, { contentType: mimeType, upsert: true });
-
-    if (uploadErr) {
-      console.error("Upload error:", uploadErr);
-      return { leadId: null, error: "Failed to upload image" };
-    }
 
     const fullName =
       qrData.full_name ||
@@ -374,8 +384,8 @@ export async function scanQRAndSaveLead(formData: FormData): Promise<{
       qr_raw: qrRaw,
       qr_json: qrData as unknown as Record<string, unknown>,
       image_path: storagePath,
-      image_name: file.name,
-      image_mime: file.type,
+      image_name: file?.name,
+      image_mime: file?.type,
     };
 
     const { createLead } = await import("@/actions/leads");
