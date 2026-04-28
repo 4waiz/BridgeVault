@@ -4,7 +4,13 @@ import { createClient } from "@/lib/supabase/server";
 import { getOCRProvider } from "@/lib/ocr";
 import { enrichLead } from "@/lib/enrichment";
 import { findDuplicates } from "@/lib/duplicates";
-import { decodeQRFromImage, parseQRPayload, mergeOCRAndQR } from "@/lib/qr";
+import {
+  decodeQRFromImage,
+  parseQRPayload,
+  mergeOCRAndQR,
+  type QRContactData,
+} from "@/lib/qr";
+import { extractDomain, generateLeadSummary } from "@/lib/utils";
 import type { ParsedBusinessCard, DuplicateWarning } from "@/types";
 
 /** Cap attacker-controlled uploads well below the body-size limit so one
@@ -266,5 +272,122 @@ export async function uploadCardImage(formData: FormData): Promise<{
   } catch (error) {
     console.error("Image upload error:", error);
     return { imagePath: null, error: "Upload failed" };
+  }
+}
+
+/** Scan a QR code image (no OCR) and save the contact as a lead. */
+export async function scanQRAndSaveLead(formData: FormData): Promise<{
+  leadId: string | null;
+  error?: string;
+}> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { leadId: null, error: "Not authenticated" };
+
+    const file = formData.get("image") as File;
+    const uploadError = validateUpload(file);
+    if (uploadError) return { leadId: null, error: uploadError };
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const mimeType = file.type || "image/jpeg";
+
+    // Decode first so we don't upload an orphan file when no QR is found.
+    const qrRaw = await Promise.race([
+      decodeQRFromImage(buffer, mimeType).catch(() => null),
+      new Promise<null>((r) => setTimeout(() => r(null), 4000)),
+    ]);
+
+    if (!qrRaw) {
+      return { leadId: null, error: "No QR code detected in image" };
+    }
+
+    const qrData: QRContactData = parseQRPayload(qrRaw);
+
+    const tempId = crypto.randomUUID();
+    const rawExt = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const ext = /^[a-z0-9]{1,8}$/.test(rawExt) ? rawExt : "jpg";
+    const storagePath = `${user.id}/${tempId}/qr.${ext}`;
+
+    const { error: uploadErr } = await supabase.storage
+      .from("business-cards")
+      .upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+
+    if (uploadErr) {
+      console.error("Upload error:", uploadErr);
+      return { leadId: null, error: "Failed to upload image" };
+    }
+
+    const fullName =
+      qrData.full_name ||
+      [qrData.first_name, qrData.last_name].filter(Boolean).join(" ") ||
+      "QR Contact";
+
+    const domain =
+      (qrData.website && extractDomain(qrData.website)) ||
+      (qrData.email && extractDomain(qrData.email)) ||
+      null;
+
+    const summary = generateLeadSummary({
+      full_name: fullName,
+      job_title: qrData.job_title || "",
+      company: qrData.company || "",
+      email: qrData.email || "",
+      phone: qrData.phone || "",
+      domain,
+    });
+
+    const enrichment_json: Record<string, unknown> = {
+      domain,
+      contact_methods: [
+        qrData.email && "email",
+        qrData.phone && "phone",
+        qrData.website && "website",
+      ].filter(Boolean),
+      has_email: !!qrData.email,
+      has_phone: !!qrData.phone,
+      has_website: !!qrData.website,
+      domain_source: qrData.website ? "website" : qrData.email ? "email" : null,
+      source: "qr_only",
+    };
+
+    const leadData = {
+      full_name: fullName,
+      first_name: qrData.first_name || "",
+      last_name: qrData.last_name || "",
+      job_title: qrData.job_title || "",
+      company: qrData.company || "",
+      email: qrData.email || "",
+      phone: qrData.phone || "",
+      website: qrData.website || "",
+      address: qrData.address || "",
+      city: qrData.city || "",
+      country: qrData.country || "",
+      notes: qrData.notes || "",
+      domain: domain || undefined,
+      summary,
+      enrichment_json,
+      qr_raw: qrRaw,
+      qr_json: qrData as unknown as Record<string, unknown>,
+      image_path: storagePath,
+      image_name: file.name,
+      image_mime: file.type,
+    };
+
+    const { createLead } = await import("@/actions/leads");
+    const result = await createLead(leadData);
+
+    if (result.error) return { leadId: null, error: result.error };
+
+    return { leadId: result.data?.id || null };
+  } catch (error) {
+    console.error("QR scan error:", error);
+    return {
+      leadId: null,
+      error: error instanceof Error ? error.message : "Failed to save lead",
+    };
   }
 }

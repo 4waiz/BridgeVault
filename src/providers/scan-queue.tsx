@@ -6,11 +6,13 @@ import {
   useContext,
   type ReactNode,
 } from "react";
-import { scanAndSaveLead } from "@/actions/ocr";
+import { scanAndSaveLead, scanQRAndSaveLead } from "@/actions/ocr";
 import { useNotifications } from "./notifications";
 
+export type ScanMode = "card" | "qr";
+
 interface ScanQueueContextValue {
-  enqueueScan: (file: File) => void;
+  enqueueScan: (file: File, mode?: ScanMode) => void;
 }
 
 const ScanQueueContext = createContext<ScanQueueContextValue>({
@@ -25,15 +27,18 @@ export function ScanQueueProvider({ children }: { children: ReactNode }) {
   const { push } = useNotifications();
 
   const enqueueScan = useCallback<ScanQueueContextValue["enqueueScan"]>(
-    (file) => {
+    (file, mode = "card") => {
       void (async () => {
         const formData = new FormData();
         formData.append("image", file);
-        const result = await scanAndSaveLead(formData);
+        const result =
+          mode === "qr"
+            ? await scanQRAndSaveLead(formData)
+            : await scanAndSaveLead(formData);
         if (result.error || !result.leadId) {
           push({
             variant: "error",
-            title: "Scan failed",
+            title: mode === "qr" ? "QR scan failed" : "Scan failed",
             body: result.error ?? "Could not save lead",
           });
           return;
