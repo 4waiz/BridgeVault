@@ -296,9 +296,10 @@ export async function scanQRAndSaveLead(formData: FormData): Promise<{
     const mimeType = file.type || "image/jpeg";
 
     // Decode first so we don't upload an orphan file when no QR is found.
+    // Allow more time than the card flow — we run several preprocessing passes.
     const qrRaw = await Promise.race([
       decodeQRFromImage(buffer, mimeType).catch(() => null),
-      new Promise<null>((r) => setTimeout(() => r(null), 4000)),
+      new Promise<null>((r) => setTimeout(() => r(null), 12_000)),
     ]);
 
     if (!qrRaw) {
