@@ -4,29 +4,48 @@ import jsQR from "jsqr";
  * Decode a QR code from a File on the client (browser canvas → jsQR).
  *
  * We decode here because the production deploy runs on Cloudflare Workers,
- * which can't load `sharp`'s native binary. The browser already has a fast,
- * native image decoder via canvas, so this is both more portable and faster
- * (no upload-then-decode round trip).
+ * which can't load `sharp`'s native binary. Real-world phone photos are messy:
+ * the QR is often off-center, small in the frame, tilted, or low-contrast.
+ * jsQR has no localization or perspective correction, so we brute-force it
+ * with multiple preprocessing passes.
  *
- * Returns the raw QR payload, or null if no QR could be detected after all
- * preprocessing passes.
+ * Order is fastest-and-most-likely first; we early-exit on the first hit.
  */
 export async function decodeQRClient(file: File): Promise<string | null> {
   const bitmap = await loadBitmap(file);
 
-  // Try a few sizes — too small loses detail, too big wastes work.
-  // Order from "most likely to hit" down to fallbacks.
-  const sizes = [1600, 1200, 2000, 800];
-
-  for (const size of sizes) {
-    const result = scanBitmap(bitmap, size, "none");
-    if (result) return result;
+  // Pass 1: full frame at a few sizes. Catches well-framed shots.
+  for (const size of [1600, 1200, 2000]) {
+    const hit = scanFull(bitmap, size, "none");
+    if (hit) return hit;
   }
 
-  // Contrast boost — helps glare / dim photos.
+  // Pass 2: full frame, contrast-boosted. Catches dim/glare shots.
   for (const size of [1200, 1600]) {
-    const result = scanBitmap(bitmap, size, "contrast");
-    if (result) return result;
+    const hit = scanFull(bitmap, size, "contrast");
+    if (hit) return hit;
+  }
+
+  // Pass 3: tiled crops. The QR may occupy only a small part of the photo
+  // (e.g. card held at distance, or off to one side). 3x3 grid of overlapping
+  // 50%-size tiles covers anywhere the QR could be while still giving jsQR
+  // enough resolution to lock onto the finder patterns.
+  for (const tile of tileRegions(bitmap, 3, 0.5)) {
+    const hit = scanRegion(bitmap, tile, 1000, "none");
+    if (hit) return hit;
+  }
+
+  // Pass 4: same tiles with contrast boost.
+  for (const tile of tileRegions(bitmap, 3, 0.5)) {
+    const hit = scanRegion(bitmap, tile, 1000, "contrast");
+    if (hit) return hit;
+  }
+
+  // Pass 5: small rotations on the full frame. jsQR tolerates ~5° tilt; for
+  // photos taken at an angle, nudging by ±15° / ±30° often unlocks decode.
+  for (const angle of [15, -15, 30, -30]) {
+    const hit = scanRotated(bitmap, 1400, angle);
+    if (hit) return hit;
   }
 
   return null;
@@ -45,11 +64,31 @@ async function loadBitmap(file: File): Promise<ImageBitmap> {
 
 type Mode = "none" | "contrast";
 
-function scanBitmap(bitmap: ImageBitmap, maxDim: number, mode: Mode): string | null {
-  const { width: srcW, height: srcH } = bitmap;
-  const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
-  const w = Math.max(1, Math.round(srcW * scale));
-  const h = Math.max(1, Math.round(srcH * scale));
+interface Region {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function scanFull(bitmap: ImageBitmap, maxDim: number, mode: Mode): string | null {
+  return scanRegion(
+    bitmap,
+    { x: 0, y: 0, w: bitmap.width, h: bitmap.height },
+    maxDim,
+    mode
+  );
+}
+
+function scanRegion(
+  bitmap: ImageBitmap,
+  region: Region,
+  maxDim: number,
+  mode: Mode
+): string | null {
+  const scale = Math.min(1, maxDim / Math.max(region.w, region.h));
+  const w = Math.max(1, Math.round(region.w * scale));
+  const h = Math.max(1, Math.round(region.h * scale));
 
   const canvas = document.createElement("canvas");
   canvas.width = w;
@@ -57,20 +96,68 @@ function scanBitmap(bitmap: ImageBitmap, maxDim: number, mode: Mode): string | n
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
 
-  ctx.drawImage(bitmap, 0, 0, w, h);
+  ctx.drawImage(bitmap, region.x, region.y, region.w, region.h, 0, 0, w, h);
   const imageData = ctx.getImageData(0, 0, w, h);
 
-  if (mode === "contrast") {
-    boostContrast(imageData.data);
-  }
+  if (mode === "contrast") boostContrast(imageData.data);
 
   const result = jsQR(imageData.data, w, h, { inversionAttempts: "attemptBoth" });
   return result?.data || null;
 }
 
+function scanRotated(bitmap: ImageBitmap, maxDim: number, angleDeg: number): string | null {
+  const { width: srcW, height: srcH } = bitmap;
+  const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+  const w = Math.max(1, Math.round(srcW * scale));
+  const h = Math.max(1, Math.round(srcH * scale));
+
+  // Bounding box of the rotated image so we don't crop corners.
+  const angle = (angleDeg * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(angle));
+  const sin = Math.abs(Math.sin(angle));
+  const cw = Math.round(w * cos + h * sin);
+  const ch = Math.round(w * sin + h * cos);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.translate(cw / 2, ch / 2);
+  ctx.rotate(angle);
+  ctx.drawImage(bitmap, -w / 2, -h / 2, w, h);
+
+  const imageData = ctx.getImageData(0, 0, cw, ch);
+  const result = jsQR(imageData.data, cw, ch, { inversionAttempts: "attemptBoth" });
+  return result?.data || null;
+}
+
+/** Generate an N×N grid of overlapping crops sized at `tileFraction` of the image. */
+function tileRegions(bitmap: ImageBitmap, grid: number, tileFraction: number): Region[] {
+  const { width, height } = bitmap;
+  const tileW = Math.round(width * tileFraction);
+  const tileH = Math.round(height * tileFraction);
+  // grid-1 strides between overlapping tiles, plus 1 stride of zero offset.
+  const strideX = grid > 1 ? Math.round((width - tileW) / (grid - 1)) : 0;
+  const strideY = grid > 1 ? Math.round((height - tileH) / (grid - 1)) : 0;
+
+  const regions: Region[] = [];
+  for (let row = 0; row < grid; row++) {
+    for (let col = 0; col < grid; col++) {
+      regions.push({
+        x: col * strideX,
+        y: row * strideY,
+        w: tileW,
+        h: tileH,
+      });
+    }
+  }
+  return regions;
+}
+
 /** In-place greyscale + linear contrast stretch. Cheap, helps low-light photos. */
 function boostContrast(data: Uint8ClampedArray): void {
-  // Pass 1: collect luma min/max to know the range we're stretching.
   let min = 255;
   let max = 0;
   for (let i = 0; i < data.length; i += 4) {
@@ -80,7 +167,6 @@ function boostContrast(data: Uint8ClampedArray): void {
   }
   const range = max - min || 1;
 
-  // Pass 2: rewrite pixels as stretched greyscale.
   for (let i = 0; i < data.length; i += 4) {
     const luma = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
     const stretched = ((luma - min) / range) * 255;
