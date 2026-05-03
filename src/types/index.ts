@@ -61,7 +61,53 @@ export interface Profile {
   id: string;
   full_name: string | null;
   email: string | null;
+  is_admin: boolean;
   created_at: string;
+}
+
+export interface AdminProfileStats {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  joined_at: string;
+  is_admin: boolean;
+  leads_count: number;
+  qualified_count: number;
+  contacted_count: number;
+  drafts_count: number;
+  last_scan_at: string | null;
+}
+
+export interface AdminActivityRow {
+  id: string;
+  action: string;
+  created_at: string;
+  metadata: Record<string, unknown> | null;
+  scanner_id: string;
+  scanner_name: string | null;
+  scanner_email: string | null;
+  lead_id: string | null;
+  lead_name: string | null;
+  lead_company: string | null;
+}
+
+export interface AdminLeadRow extends Lead {
+  scanned_by_name: string | null;
+  scanned_by_email: string | null;
+}
+
+export interface AdminOverview {
+  total_users: number;
+  total_leads: number;
+  total_scans: number;
+  total_qualified: number;
+  total_contacted: number;
+  avg_leads_per_user: number;
+}
+
+export interface DailyScan {
+  day: string;
+  scans: number;
 }
 
 export interface ParsedField {

@@ -3,22 +3,25 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Camera, LayoutDashboard, Users, UserCircle, LogOut, Menu, X } from "lucide-react";
+import { Camera, LayoutDashboard, Users, UserCircle, LogOut, Menu, X, Shield } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/providers/theme";
 
-const navItems = [
+const baseNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/scan", label: "Scan Card", icon: Camera },
   { href: "/leads", label: "All Leads", icon: Users },
   { href: "/account", label: "Account", icon: UserCircle },
 ];
 
-export function Header() {
+export function Header({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
+  const navItems = isAdmin
+    ? [...baseNavItems, { href: "/admin", label: "Admin", icon: Shield }]
+    : baseNavItems;
   const router = useRouter();
   const { theme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);

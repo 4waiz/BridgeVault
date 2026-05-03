@@ -32,6 +32,8 @@ export async function updateSession(request: NextRequest) {
   const isAuthPage = request.nextUrl.pathname.startsWith("/auth");
   const isPublicPage = request.nextUrl.pathname === "/";
   const isApiRoute = request.nextUrl.pathname.startsWith("/api");
+  const isAdminPage = request.nextUrl.pathname.startsWith("/admin");
+  const isAdminApi = request.nextUrl.pathname.startsWith("/api/admin");
 
   if (!user && !isAuthPage && !isPublicPage && !isApiRoute) {
     const url = request.nextUrl.clone();
@@ -43,6 +45,30 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
+  }
+
+  if (isAdminPage || isAdminApi) {
+    if (!user) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/sign-in";
+      return NextResponse.redirect(url);
+    }
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", user.id)
+      .single();
+    if (!profile?.is_admin) {
+      if (isAdminApi) {
+        return new NextResponse(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;
