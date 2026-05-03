@@ -155,12 +155,14 @@ export async function scanAndSaveLead(formData: FormData): Promise<{
       new Promise<null>((r) => setTimeout(() => r(null), 2000)),
     ]);
 
+    let ocrError: string | null = null;
     const [uploadResult, ocrResult, qrRaw] = await Promise.all([
       supabase.storage
         .from("business-cards")
         .upload(storagePath, buffer, { contentType: mimeType, upsert: true }),
       getOCRProvider().extractBusinessCard(buffer, mimeType).catch((e) => {
         console.error("OCR failed:", e);
+        ocrError = e instanceof Error ? e.message : "OCR failed";
         return null;
       }),
       qrWithTimeout,
@@ -180,6 +182,17 @@ export async function scanAndSaveLead(formData: FormData): Promise<{
       // Only QR available
       const qrData = parseQRPayload(qrRaw);
       parsed = mergeOCRAndQR(null as unknown as ParsedBusinessCard, qrData, qrRaw);
+    }
+
+    // If we couldn't extract anything (no OCR result AND no QR payload), bail
+    // out with the actual error instead of saving an empty "Scanned Card" lead.
+    if (!parsed) {
+      const reason = ocrError
+        ? `Couldn't read the card: ${ocrError}`
+        : !process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY
+          ? "No vision API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY."
+          : "Couldn't read the card. Try a clearer photo.";
+      return { leadId: null, error: reason };
     }
 
     // Enrich
