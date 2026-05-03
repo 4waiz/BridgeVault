@@ -184,14 +184,28 @@ export async function scanAndSaveLead(formData: FormData): Promise<{
       parsed = mergeOCRAndQR(null as unknown as ParsedBusinessCard, qrData, qrRaw);
     }
 
-    // If we couldn't extract anything (no OCR result AND no QR payload), bail
-    // out with the actual error instead of saving an empty "Scanned Card" lead.
-    if (!parsed) {
+    // Treat an OCR result with no recognizable contact fields as "no result".
+    // Otherwise we'd save an empty "Scanned Card" lead with nothing useful.
+    const hasUsefulData =
+      !!parsed &&
+      (parsed.full_name?.value ||
+        parsed.email?.value ||
+        parsed.phone?.value ||
+        parsed.company?.value ||
+        parsed.website?.value);
+
+    if (!parsed || !hasUsefulData) {
       const reason = ocrError
         ? `Couldn't read the card: ${ocrError}`
         : !process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY
           ? "No vision API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY."
-          : "Couldn't read the card. Try a clearer photo.";
+          : "Couldn't read the card. Try a clearer, well-lit photo.";
+
+      // Clean up the orphan image we already uploaded so storage doesn't fill
+      // up with failed-scan junk.
+      if (uploadResult.data) {
+        await supabase.storage.from("business-cards").remove([storagePath]);
+      }
       return { leadId: null, error: reason };
     }
 

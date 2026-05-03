@@ -53,10 +53,18 @@ export default function ScanPage() {
       // queue then compresses it before upload if needed.
       let toEnqueue: File = file;
       if (mode === "card") {
-        try {
-          toEnqueue = await compressImage(file);
-        } catch {
-          toEnqueue = file;
+        // Safari/iOS deliver HEIC by default. Canvas can't decode HEIC reliably,
+        // so skip client compression and let the server take the original — the
+        // server-side OCR pipeline handles HEIC fine.
+        const isHeic =
+          /\.(heic|heif)$/i.test(file.name) ||
+          /image\/(heic|heif)/i.test(file.type);
+        if (!isHeic) {
+          try {
+            toEnqueue = await compressImage(file);
+          } catch {
+            toEnqueue = file;
+          }
         }
       }
 

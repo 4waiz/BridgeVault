@@ -51,24 +51,33 @@ export default function AccountPage() {
       }
 
       try {
-        const { error } = await supabase.storage.getBucket("business-cards");
+        // getBucket() requires permission to read bucket metadata that
+        // normal authenticated users don't have — it would always fail.
+        // Instead, do what the app actually does: list the user's own folder.
+        // If RLS lets us list it, uploads/reads/deletes will all work too.
+        const folder = user?.id || "";
+        const { error } = await supabase.storage
+          .from("business-cards")
+          .list(folder, { limit: 1 });
         items.push({
           label: "Storage Bucket",
           status: error ? "disconnected" : "connected",
-          detail: error ? "Bucket not found" : "business-cards bucket active",
+          detail: error
+            ? `Storage check failed: ${error.message}`
+            : "business-cards bucket active",
         });
-      } catch {
+      } catch (e) {
         items.push({
           label: "Storage Bucket",
           status: "disconnected",
-          detail: "Cannot reach storage",
+          detail: e instanceof Error ? e.message : "Cannot reach storage",
         });
       }
 
       items.push({
         label: "OCR Provider",
         status: "connected",
-        detail: "OpenAI Vision (gpt-4o-mini)",
+        detail: "OCR.space + GPT-4o-mini structuring",
       });
 
       setStatuses(items);
