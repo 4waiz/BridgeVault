@@ -67,16 +67,23 @@ export function ScanQueueProvider({ children }: { children: ReactNode }) {
           // Decode in the browser — the server runtime is Cloudflare Workers,
           // which can't run sharp. Canvas + jsQR works in any modern browser.
           let qrRaw: string | null = null;
+          let decodeErr: unknown = null;
           try {
             qrRaw = await decodeQRClient(file);
           } catch (err) {
+            decodeErr = err;
             console.error("QR decode failed:", err);
           }
           if (!qrRaw) {
+            const looksLikeFormatError =
+              decodeErr instanceof Error &&
+              /image|decode|bitmap|format/i.test(decodeErr.message);
             push({
               variant: "error",
               title: "QR scan failed",
-              body: "No QR code detected. Hold the camera closer and steadier.",
+              body: looksLikeFormatError
+                ? "Couldn't read this image format. Try a JPEG or PNG screenshot."
+                : "No QR detected. Fill more of the frame with the code, hold steady, and ensure good lighting.",
             });
             return;
           }
