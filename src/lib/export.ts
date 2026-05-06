@@ -28,6 +28,14 @@ const COLUMNS = [
   { key: "updated_at", header: "Updated At" },
 ] as const;
 
+const CARD_IMAGE_HEADER = "Card Image";
+
+/** Convert a value-only cell at (r,c) into a hyperlink cell pointing at `url`. */
+function setHyperlinkCell(ws: XLSX.WorkSheet, r: number, c: number, url: string) {
+  const addr = XLSX.utils.encode_cell({ r, c });
+  ws[addr] = { t: "s", v: "View image", l: { Target: url, Tooltip: "Open business card" } };
+}
+
 /** Neutralize CSV/XLSX formula injection. A cell that begins with
  *  = + - @ \t or \r is interpreted as a formula when opened in Excel /
  *  Google Sheets / LibreOffice, so prefix it with a leading apostrophe. */
@@ -36,7 +44,10 @@ function safeCell(value: string | null): string | null {
   return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 }
 
-export function generateExcelBuffer(leads: Lead[]): Buffer {
+export function generateExcelBuffer(
+  leads: Lead[],
+  imageUrls?: Map<string, string>
+): Buffer {
   const rows = leads.map((lead) => {
     const row: Record<string, string | null> = {};
     COLUMNS.forEach((col) => {
@@ -55,23 +66,36 @@ export function generateExcelBuffer(leads: Lead[]): Buffer {
         row[col.header] = safeCell((value as string) || null);
       }
     });
+    // Placeholder so json_to_sheet allocates the column. Real hyperlink
+    // cell is written below.
+    row[CARD_IMAGE_HEADER] = imageUrls?.has(lead.id) ? "View image" : null;
     return row;
   });
 
+  const headers = [...COLUMNS.map((c) => c.header), CARD_IMAGE_HEADER];
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
+  const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
 
-  // Auto-size columns
-  const colWidths = COLUMNS.map((col) => {
+  // Replace plain "View image" strings with proper hyperlink cells.
+  if (imageUrls && imageUrls.size > 0) {
+    const cardCol = headers.indexOf(CARD_IMAGE_HEADER);
+    leads.forEach((lead, i) => {
+      const url = imageUrls.get(lead.id);
+      if (url) setHyperlinkCell(ws, i + 1, cardCol, url); // +1 skips header row
+    });
+  }
+
+  // Auto-size columns (Card Image column gets a fixed reasonable width)
+  const colWidths = headers.map((header) => {
+    if (header === CARD_IMAGE_HEADER) return { wch: 14 };
     const maxDataLen = Math.max(
-      col.header.length,
-      ...rows.map((r) => (r[col.header] || "").length)
+      header.length,
+      ...rows.map((r) => (r[header] || "").length)
     );
     return { wch: Math.min(Math.max(maxDataLen + 2, 10), 50) };
   });
   ws["!cols"] = colWidths;
 
-  // Freeze header row
   ws["!freeze"] = { xSplit: 0, ySplit: 1 };
 
   XLSX.utils.book_append_sheet(wb, ws, "Leads");
@@ -113,6 +137,7 @@ export function generateAdminWorkbook(input: {
   leads: AdminLeadRow[];
   dailyScans: DailyScan[];
   activity: AdminActivityRow[];
+  imageUrls?: Map<string, string>;
 }): Buffer {
   const wb = XLSX.utils.book_new();
 
@@ -177,6 +202,7 @@ export function generateAdminWorkbook(input: {
     "Scanned By Email",
     "Created",
     "Updated",
+    CARD_IMAGE_HEADER,
   ];
   const leadRows = input.leads.map((l) => ({
     "Full Name": safeCell(l.full_name),
@@ -193,8 +219,17 @@ export function generateAdminWorkbook(input: {
     "Scanned By Email": safeCell(l.scanned_by_email),
     Created: formatDateTime(l.created_at),
     Updated: formatDateTime(l.updated_at),
+    [CARD_IMAGE_HEADER]: input.imageUrls?.has(l.id) ? "View image" : null,
   }));
-  XLSX.utils.book_append_sheet(wb, buildSheet(leadRows, leadHeaders), "All-Leads");
+  const leadsSheet = buildSheet(leadRows, leadHeaders);
+  if (input.imageUrls && input.imageUrls.size > 0) {
+    const cardCol = leadHeaders.indexOf(CARD_IMAGE_HEADER);
+    input.leads.forEach((l, i) => {
+      const url = input.imageUrls!.get(l.id);
+      if (url) setHyperlinkCell(leadsSheet, i + 1, cardCol, url);
+    });
+  }
+  XLSX.utils.book_append_sheet(wb, leadsSheet, "All-Leads");
 
   // 4. Daily scans
   const dailyHeaders = ["Day", "Scans"];
