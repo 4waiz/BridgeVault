@@ -1,8 +1,11 @@
 "use server";
 
 import { requireAdmin } from "@/lib/admin";
-import { createServiceClient } from "@/lib/supabase/service";
 import { revalidatePath } from "next/cache";
+
+// All reads/writes in this file go through `db` (service-role client returned
+// by requireAdmin), which bypasses RLS so admins can see and modify rows
+// belonging to any user. The is_admin gate runs inside requireAdmin first.
 import type {
   AdminActivityRow,
   AdminLeadRow,
@@ -21,24 +24,24 @@ function escapeSearchTerm(raw: string): string {
 }
 
 export async function getAdminOverview(): Promise<AdminOverview> {
-  const { supabase } = await requireAdmin();
+  const { db } = await requireAdmin();
 
   const [{ count: total_users }, { count: total_leads }, { count: total_scans }, { count: total_qualified }, { count: total_contacted }] =
     await Promise.all([
-      supabase.from("profiles").select("*", { count: "exact", head: true }),
-      supabase
+      db.from("profiles").select("*", { count: "exact", head: true }),
+      db
         .from("leads")
         .select("*", { count: "exact", head: true })
         .eq("is_draft", false),
-      supabase
+      db
         .from("lead_activity")
         .select("*", { count: "exact", head: true })
         .in("action", ["created", "draft_promoted"]),
-      supabase
+      db
         .from("leads")
         .select("*", { count: "exact", head: true })
         .eq("status", "qualified"),
-      supabase
+      db
         .from("leads")
         .select("*", { count: "exact", head: true })
         .eq("status", "contacted"),
@@ -59,8 +62,8 @@ export async function getAdminOverview(): Promise<AdminOverview> {
 }
 
 export async function getDailyScans(): Promise<DailyScan[]> {
-  const { supabase } = await requireAdmin();
-  const { data } = await supabase.from("admin_daily_scans").select("*");
+  const { db } = await requireAdmin();
+  const { data } = await db.from("admin_daily_scans").select("*");
 
   const map = new Map<string, number>();
   (data || []).forEach((row: { day: string; scans: number }) => {
@@ -80,8 +83,8 @@ export async function getDailyScans(): Promise<DailyScan[]> {
 }
 
 export async function getTopUsers(limit = 10): Promise<AdminProfileStats[]> {
-  const { supabase } = await requireAdmin();
-  const { data } = await supabase
+  const { db } = await requireAdmin();
+  const { data } = await db
     .from("admin_user_stats")
     .select("*")
     .order("leads_count", { ascending: false })
@@ -90,8 +93,8 @@ export async function getTopUsers(limit = 10): Promise<AdminProfileStats[]> {
 }
 
 export async function getRecentActivity(limit = 20): Promise<AdminActivityRow[]> {
-  const { supabase } = await requireAdmin();
-  const { data } = await supabase
+  const { db } = await requireAdmin();
+  const { data } = await db
     .from("lead_activity")
     .select(
       "id, action, created_at, metadata, user_id, lead_id, profiles!lead_activity_user_id_fkey(full_name, email), leads(full_name, company)"
@@ -125,8 +128,8 @@ export async function getRecentActivity(limit = 20): Promise<AdminActivityRow[]>
 }
 
 export async function getAllProfiles(): Promise<AdminProfileStats[]> {
-  const { supabase } = await requireAdmin();
-  const { data } = await supabase
+  const { db } = await requireAdmin();
+  const { data } = await db
     .from("admin_user_stats")
     .select("*")
     .order("leads_count", { ascending: false });
@@ -134,18 +137,18 @@ export async function getAllProfiles(): Promise<AdminProfileStats[]> {
 }
 
 export async function getProfileWithLeads(userId: string) {
-  const { supabase } = await requireAdmin();
+  const { db } = await requireAdmin();
 
   const [{ data: profile }, { data: stats }, { data: leads }, { data: activity }] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", userId).single(),
-    supabase.from("admin_user_stats").select("*").eq("id", userId).single(),
-    supabase
+    db.from("profiles").select("*").eq("id", userId).single(),
+    db.from("admin_user_stats").select("*").eq("id", userId).single(),
+    db
       .from("leads")
       .select("*")
       .eq("user_id", userId)
       .eq("is_draft", false)
       .order("created_at", { ascending: false }),
-    supabase
+    db
       .from("lead_activity")
       .select("*, leads(full_name, company)")
       .eq("user_id", userId)
@@ -164,9 +167,9 @@ export async function getAllLeadsAdmin(params?: {
   to?: string;
   sort?: string;
 }): Promise<AdminLeadRow[]> {
-  const { supabase } = await requireAdmin();
+  const { db } = await requireAdmin();
 
-  let query = supabase
+  let query = db
     .from("leads")
     .select(
       "*, profiles!leads_user_id_fkey(full_name, email)"
@@ -220,8 +223,8 @@ export async function getAllLeadsAdmin(params?: {
 }
 
 export async function getAdminLead(leadId: string) {
-  const { supabase } = await requireAdmin();
-  const { data, error } = await supabase
+  const { db } = await requireAdmin();
+  const { data, error } = await db
     .from("leads")
     .select(
       "*, lead_tags(*), lead_attachments(*), profiles!leads_user_id_fkey(full_name, email)"
@@ -252,12 +255,12 @@ export async function adminUpdateLead(
     summary?: string;
   }
 ) {
-  const { supabase, user } = await requireAdmin();
+  const { db, user } = await requireAdmin();
 
-  const { error } = await supabase.from("leads").update(data).eq("id", leadId);
+  const { error } = await db.from("leads").update(data).eq("id", leadId);
   if (error) return { error: error.message };
 
-  await supabase.from("lead_activity").insert({
+  await db.from("lead_activity").insert({
     lead_id: leadId,
     user_id: user.id,
     action: "admin_updated",
@@ -270,20 +273,20 @@ export async function adminUpdateLead(
 }
 
 export async function adminDeleteLead(leadId: string) {
-  const { supabase } = await requireAdmin();
+  const { db } = await requireAdmin();
 
-  const { data: attachments } = await supabase
+  const { data: attachments } = await db
     .from("lead_attachments")
     .select("storage_path")
     .eq("lead_id", leadId);
 
   if (attachments?.length) {
-    await supabase.storage
+    await db.storage
       .from("business-cards")
       .remove(attachments.map((a) => a.storage_path));
   }
 
-  const { error } = await supabase.from("leads").delete().eq("id", leadId);
+  const { error } = await db.from("leads").delete().eq("id", leadId);
   if (error) return { error: error.message };
 
   revalidatePath("/admin/leads");
@@ -295,8 +298,8 @@ export async function adminUpdateProfile(
   userId: string,
   data: { full_name?: string; is_admin?: boolean }
 ) {
-  const { supabase } = await requireAdmin();
-  const { error } = await supabase
+  const { db } = await requireAdmin();
+  const { error } = await db
     .from("profiles")
     .update(data)
     .eq("id", userId);
@@ -308,31 +311,30 @@ export async function adminUpdateProfile(
 }
 
 export async function adminDeleteProfile(userId: string) {
-  const { user, supabase } = await requireAdmin();
+  const { user, db } = await requireAdmin();
   if (user.id === userId) {
     return { error: "You cannot delete your own admin account." };
   }
 
-  const { data: attachments } = await supabase
+  const { data: attachments } = await db
     .from("lead_attachments")
     .select("storage_path")
     .eq("user_id", userId);
 
   if (attachments?.length) {
-    await supabase.storage
+    await db.storage
       .from("business-cards")
       .remove(attachments.map((a) => a.storage_path));
   }
 
-  await supabase.from("lead_attachments").delete().eq("user_id", userId);
-  await supabase.from("lead_tags").delete().eq("user_id", userId);
-  await supabase.from("lead_activity").delete().eq("user_id", userId);
-  await supabase.from("leads").delete().eq("user_id", userId);
+  await db.from("lead_attachments").delete().eq("user_id", userId);
+  await db.from("lead_tags").delete().eq("user_id", userId);
+  await db.from("lead_activity").delete().eq("user_id", userId);
+  await db.from("leads").delete().eq("user_id", userId);
 
   let serviceError: string | null = null;
   try {
-    const service = createServiceClient();
-    const { error } = await service.auth.admin.deleteUser(userId);
+    const { error } = await db.auth.admin.deleteUser(userId);
     if (error) serviceError = error.message;
   } catch (err) {
     serviceError = err instanceof Error ? err.message : "Service client unavailable";

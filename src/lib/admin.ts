@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { redirect } from "next/navigation";
 
 export async function requireAdmin() {
@@ -15,7 +16,11 @@ export async function requireAdmin() {
     .single();
 
   if (!profile?.is_admin) redirect("/dashboard");
-  return { user, supabase };
+
+  // `db` bypasses RLS so admin queries can see all users' rows.
+  // Only returned after the is_admin gate above passes.
+  const db = createServiceClient();
+  return { user, supabase, db };
 }
 
 export async function checkIsAdmin(): Promise<boolean> {
