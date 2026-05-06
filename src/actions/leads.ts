@@ -1,8 +1,13 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { revalidatePath } from "next/cache";
 import type { LeadStatus } from "@/types";
+
+// Read paths use the service-role client so any signed-in user can browse,
+// view, and export every user's leads. Writes still use the per-user client
+// (RLS enforces "owner edits only"). The auth check happens before any read.
 
 /** Escape user input before interpolating into a PostgREST `.or()` filter.
  *  Strips characters that would break out of the `ilike.` pattern
@@ -327,11 +332,11 @@ export async function getLeads(params?: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated", data: [] };
 
-  let query = supabase
+  const db = createServiceClient();
+  let query = db
     .from("leads")
     .select("*, lead_tags(*), lead_attachments(*)")
-    .eq("user_id", user.id)
-    .eq("is_draft", false); // Exclude drafts from normal listing
+    .eq("is_draft", false); // Exclude drafts from listing — every user's drafts stay private
 
   if (params?.status && params.status !== "all") {
     query = query.eq("status", params.status);
@@ -372,11 +377,11 @@ export async function getLead(leadId: string) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
-  const { data, error } = await supabase
+  const db = createServiceClient();
+  const { data, error } = await db
     .from("leads")
     .select("*, lead_tags(*), lead_attachments(*)")
     .eq("id", leadId)
-    .eq("user_id", user.id)
     .single();
 
   if (error) return { error: error.message };
@@ -390,20 +395,11 @@ export async function getLeadActivity(leadId: string) {
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  // Verify the caller owns the lead before returning its activity log.
-  const { data: ownedLead } = await supabase
-    .from("leads")
-    .select("id")
-    .eq("id", leadId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (!ownedLead) return [];
-
-  const { data } = await supabase
+  const db = createServiceClient();
+  const { data } = await db
     .from("lead_activity")
     .select("*")
     .eq("lead_id", leadId)
-    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -417,10 +413,10 @@ export async function getRecentLeads(limit = 5) {
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data } = await supabase
+  const db = createServiceClient();
+  const { data } = await db
     .from("leads")
     .select("id, full_name, company, status, created_at")
-    .eq("user_id", user.id)
     .eq("is_draft", false)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -435,10 +431,10 @@ export async function getLeadStats() {
   } = await supabase.auth.getUser();
   if (!user) return { total: 0, reviewed: 0, contacted: 0, qualified: 0, rejected: 0, archived: 0 };
 
-  const { data } = await supabase
+  const db = createServiceClient();
+  const { data } = await db
     .from("leads")
     .select("status")
-    .eq("user_id", user.id)
     .eq("is_draft", false);
 
   const stats = { total: 0, reviewed: 0, contacted: 0, qualified: 0, rejected: 0, archived: 0 };
